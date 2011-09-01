@@ -20,12 +20,14 @@ import           Data.Aeson
 import           Data.Attoparsec(parse, maybeResult)
 import           EventStream
 
-data AMQPEvent = AMQPEvent { amqpChannel :: B.ByteString, amqpData :: B.ByteString }
+data AMQPEvent = AMQPEvent { amqpChannel :: B.ByteString, amqpData :: B.ByteString, amqpId :: Maybe B.ByteString, amqpName :: Maybe B.ByteString }
 
 instance FromJSON AMQPEvent where
     parseJSON (Object v) = AMQPEvent <$>
                            v .: "channel" <*>
-                           v .: "data"
+                           v .: "data" <*>
+                           v .:? "id" <*>
+                           v .:? "name"
     parseJSON _           = mzero
 
 main :: IO ()
@@ -62,9 +64,15 @@ sendTo chan (msg, envelope) =
     case maybeResult $ parse json (B.concat $ LB.toChunks (msgBody msg)) of
         Just value -> case fromJSON value of
             Success event -> do
-                putStrLn "Sending message"
-                writeChan chan (amqpChannel event, ServerEvent Nothing Nothing [fromByteString $ amqpData event])
-            Error _       -> return ()
+                writeChan
+                    chan
+                    (amqpChannel event,
+                    ServerEvent (fmap fromByteString $ amqpName event)
+                                (fmap fromByteString $ amqpId event)
+                                [fromByteString $ amqpData event])
+            Error e       -> do
+                print e
+                return ()
         Nothing    -> return ()
 
 messagesFor id chan = do
