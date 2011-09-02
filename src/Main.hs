@@ -12,7 +12,6 @@ import           Control.Concurrent.Chan
 import           Snap.Types
 import           Snap.Util.FileServe
 import           Snap.Http.Server
---import           Snap.Iteratee
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LB
 import           Blaze.ByteString.Builder
@@ -42,9 +41,7 @@ main = do
 getExchangeListener = do
     listener <- newChan
 
-    forkIO $ fix $ \loop -> do
-        _ <- readChan listener
-        loop
+    forkIO $ fix $ \loop -> readChan listener >> loop
 
     conn <- openConnection "127.0.0.1" "/" "guest" "guest"
     chan <- openChannel conn
@@ -52,8 +49,8 @@ getExchangeListener = do
     let queue = "haskell.queue-1"
 
     -- declare a queue, exchange and binding
-    declareQueue chan newQueue {queueName = queue, queueAutoDelete = True}
-    declareExchange chan newExchange {exchangeName = "haskell.fanout", exchangeType = "fanout"}
+    declareQueue chan newQueue {queueName = queue, queueAutoDelete = True, queueDurable = False}
+    declareExchange chan newExchange {exchangeName = "haskell.fanout", exchangeType = "fanout", exchangeDurable = False}
     bindQueue chan queue "haskell.fanout" queue
 
     consumeMsgs chan queue NoAck (sendTo listener)
