@@ -1,19 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import           Control.Applicative
-import           Control.Monad
-import           Control.Monad.Trans
+import           Control.Applicative((<|>))
+import           Control.Monad.Trans(liftIO)
 import           Control.Monad.Fix(fix)
-import           Control.Concurrent.Chan
+import           Control.Concurrent.Chan(readChan, dupChan)
+
 import           Snap.Types
-import           Snap.Util.FileServe
-import           Snap.Http.Server
+import           Snap.Util.FileServe(serveFile, serveDirectory)
+import           Snap.Http.Server(quickHttpServe)
+
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LB
-import           Blaze.ByteString.Builder
-import           AMQPListener
-import           EventStream
+import           Blaze.ByteString.Builder(fromByteString)
+
+import           AMQPListener(AMQPEvent(..), openEventChannel)
+import           EventStream(ServerEvent(..), eventStreamPull)
 
 main :: IO ()
 main = do

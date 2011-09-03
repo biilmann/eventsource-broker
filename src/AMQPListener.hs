@@ -1,17 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
-module AMQPListener (AMQPEvent, amqpChannel, amqpData, amqpId, amqpName, openEventChannel) where
+module AMQPListener (
+        AMQPEvent(..),
+        openEventChannel
+    ) where
 
-import           Network.AMQP
-import           Data.Aeson
+import           Control.Applicative((<$>), (<*>))
+import           Control.Monad(mzero)
+import           Control.Monad.Fix(fix)
+import           Control.Concurrent(forkIO)
+import           Control.Concurrent.Chan(newChan, readChan, writeChan)
+
+import           Data.Aeson(FromJSON(..), Value(..), Result(..), fromJSON, json, (.:), (.:?))
 import           Data.Attoparsec(parse, maybeResult)
+
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LB
-import           Control.Applicative
-import           Control.Monad
-import           Control.Monad.Trans
-import           Control.Monad.Fix(fix)
-import           Control.Concurrent
-import           Control.Concurrent.Chan
+
+import           Network.AMQP
 
 data AMQPEvent = AMQPEvent {
                     amqpChannel :: B.ByteString,
