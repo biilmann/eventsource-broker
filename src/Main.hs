@@ -19,7 +19,7 @@ import           EventStream(ServerEvent(..), eventStreamPull)
 
 main :: IO ()
 main = do
-    listener <- openEventChannel "localhost" "/" "guest" "guest" "haskell.fanout" "haskell.queue-1"
+    listener <- openEventChannel "haskell.fanout" "haskell.queue-1"
 
     quickHttpServe $
         ifTop (serveFile "static/index.html") <|>

@@ -16,6 +16,11 @@ import           Data.Attoparsec(parse, maybeResult)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LB
 
+import           Data.Maybe(fromJust, fromMaybe)
+import           Data.String.Utils(split)
+
+import           Text.URI(URI(..), parseURI)
+import           System.Posix.Env(getEnvDefault)
 import           Network.AMQP
 
 data AMQPEvent = AMQPEvent {
@@ -33,10 +38,15 @@ instance FromJSON AMQPEvent where
                            v .:? "name"
     parseJSON _           = mzero
 
-openEventChannel host vhost user password exchange queue = do
-    listener <- newChan
+openEventChannel exchange queue = do
+    amqpURI <- getEnvDefault "AMQP_URL" "amqp://guest:guest@127.0.0.1/"
 
-    forkIO $ fix $ \loop -> readChan listener >> loop
+    let uri   = fromJust $ parseURI amqpURI
+    let auth  = fromMaybe "guest:guest" $ uriUserInfo uri
+    let host  = fromMaybe "127.0.0.1"   $ uriRegName uri
+    let vhost = uriPath uri
+
+    let [user,password] = split ":" auth
 
     conn <- openConnection host vhost user password
     chan <- openChannel conn
@@ -45,8 +55,9 @@ openEventChannel host vhost user password exchange queue = do
     declareExchange chan newExchange {exchangeName = exchange, exchangeType = "fanout", exchangeDurable = False}
     bindQueue chan queue exchange queue
 
+    listener <- newChan
+    forkIO $ fix $ \loop -> readChan listener >> loop
     consumeMsgs chan queue NoAck (sendTo listener)
-
     return listener
 
 sendTo chan (msg, envelope) =

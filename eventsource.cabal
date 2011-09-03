@@ -23,6 +23,9 @@ Executable eventsource
     snap-core == 0.5.*,
     snap-server == 0.5.*,
     enumerator == 0.4.*,
+    MissingH == 1.1.*,
+    unix == 2.5.*,
+    uri == 0.1.*,
     amqp == 0.3.*,
     aeson == 0.3.*,
     attoparsec == 0.9.*
