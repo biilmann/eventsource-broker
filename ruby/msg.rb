@@ -6,7 +6,7 @@ client   = Bunny.new
 
 client.start
 
-exchange = client.exchange("haskell.fanout", :type => :fanout)
+exchange = client.exchange("eventsource.fanout", :type => :fanout)
 queue    = client.queue
 
 puts "Enter messages (channell message)"

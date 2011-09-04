@@ -17,7 +17,7 @@ import           EventStream(ServerEvent(..), eventStreamPull)
 
 main :: IO ()
 main = do
-    listener <- openEventChannel "eventsource.fanout" "eventsource.queue"
+    listener <- openEventChannel "eventsource.fanout" $ "eventsource.queue-" 
 
     quickHttpServe $
         ifTop (serveFile "static/index.html") <|>

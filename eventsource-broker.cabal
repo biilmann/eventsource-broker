@@ -1,16 +1,16 @@
-Name:                eventsource
-Version:             0.1
-Synopsis:            Project Synopsis Here
-Description:         Project Description Here
+Name:                eventsource-broker
+Version:             0.9
+Synopsis:            EventSource Broker
+Description:         Bridges EventSource and AMQP
 License:             AllRightsReserved
-Author:              Author
-Maintainer:          maintainer@example.com
-Stability:           Experimental
+Author:              Mathias Biilmann Christensen
+Maintainer:          info@mathias-biilmann.net
+Stability:           Alpha
 Category:            Web
 Build-type:          Simple
 Cabal-version:       >=1.2
 
-Executable eventsource
+Executable eventsource-broker
   hs-source-dirs: src
   main-is: Main.hs
 
