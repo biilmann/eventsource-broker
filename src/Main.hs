@@ -17,6 +17,7 @@ import qualified System.UUID.V4 as UUID
 import           AMQPListener(AMQPEvent(..), openEventChannel)
 import           EventStream(ServerEvent(..), eventStreamPull)
 
+-- |Setup a channel listening to an AMQP exchange and start Snap
 main :: IO ()
 main = do
     uuid <- UUID.uuid
@@ -26,23 +27,28 @@ main = do
     quickHttpServe $
         ifTop (serveFile "static/index.html") <|>
         dir "static" (serveDirectory "static") <|>
-        route [ ("eventsource", eventHandler listener) ]
+        route [ ("eventsource", eventSource listener) ]
 
-messagesFor :: ByteString -> Chan AMQPEvent -> IO ServerEvent
-messagesFor channelId chan = do
-    event <- readChan chan
-    if amqpChannel event == channelId
-        then return $ ServerEvent (fmap fromByteString $ amqpName event) (fmap fromByteString $ amqpId event) [fromByteString $ amqpData event]
-        else messagesFor channelId chan
 
-eventHandler :: Chan AMQPEvent -> Snap ()
-eventHandler chan = do
+-- |Stream events from a channel of AMQPEvents to EventSource
+eventSource :: Chan AMQPEvent -> Snap ()
+eventSource chan = do
     chan'   <- liftIO $ dupChan chan
     channelParam <- getParam "channel"
     case channelParam of
-        Just channelId -> eventStreamPull $ messagesFor channelId chan'
+        Just channelId -> eventStreamPull $ filterEvents channelId chan'
         Nothing -> do
           modifyResponse $ setResponseCode 401
           writeBS "Bad Request - no channel id"
           r <- getResponse
           finishWith r
+
+-- |Filter AMQPEvents by channelId
+filterEvents :: ByteString -> Chan AMQPEvent -> IO ServerEvent
+filterEvents channelId chan = do
+    event <- readChan chan
+    if amqpChannel event == channelId
+        then return $ ServerEvent (toBS $ amqpName event) (toBS $ amqpId event) [fromByteString $ amqpData event]
+        else filterEvents channelId chan
+  where
+    toBS = fmap fromByteString

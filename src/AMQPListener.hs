@@ -24,7 +24,7 @@ import           Text.URI(URI(..), parseURI)
 import           System.Posix.Env(getEnvDefault)
 import           Network.AMQP
 
--- | The AMQPEvent represents and incomming message that should be
+-- |The AMQPEvent represents and incomming message that should be
 -- mapped to an EventSource event.
 data AMQPEvent = AMQPEvent
     { amqpChannel :: B.ByteString
@@ -41,6 +41,10 @@ instance FromJSON AMQPEvent where
                            v .:? "name"
     parseJSON _           = mzero
 
+-- |Connects to an AMQP broker.
+-- Tries to get credentials, host and vhost from the AMQP_URL
+-- environment variable
+-- Take an exchange name and a queue name
 openEventChannel :: String -> String -> IO (Chan AMQPEvent)
 openEventChannel exchange queue = do
     amqpURI <- getEnvDefault "AMQP_URL" "amqp://guest:guest@127.0.0.1/"
@@ -64,6 +68,7 @@ openEventChannel exchange queue = do
     consumeMsgs chan queue NoAck (sendTo listener)
     return listener
 
+-- |Write messages from AMQP to a channel
 sendTo :: Chan AMQPEvent -> (Message, Envelope) -> IO ()
 sendTo chan (msg, _) =
     case maybeResult $ parse json (B.concat $ LB.toChunks (msgBody msg)) of
