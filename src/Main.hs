@@ -25,18 +25,18 @@ main = do
         route [ ("eventsource", eventHandler listener) ]
 
 messagesFor :: ByteString -> Chan AMQPEvent -> IO ServerEvent
-messagesFor handlerId chan = do
+messagesFor channelId chan = do
     event <- readChan chan
-    if amqpChannel event == handlerId
+    if amqpChannel event == channelId
         then return $ ServerEvent (fmap fromByteString $ amqpName event) (fmap fromByteString $ amqpId event) [fromByteString $ amqpData event]
-        else messagesFor handlerId chan
+        else messagesFor channelId chan
 
 eventHandler :: Chan AMQPEvent -> Snap ()
 eventHandler chan = do
     chan'   <- liftIO $ dupChan chan
     idParam <- getParam "id"
     case idParam of
-        Just handlerId -> eventStreamPull $ messagesFor handlerId chan'
+        Just channelId -> eventStreamPull $ messagesFor channelId chan'
         Nothing -> do
           modifyResponse $ setResponseCode 401
           writeBS "Bad Request - no channel id"

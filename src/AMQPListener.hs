@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
-module AMQPListener (
-        AMQPEvent(..),
-        openEventChannel
+module AMQPListener
+    (
+      AMQPEvent(..)
+    , openEventChannel
     ) where
 
 import           Control.Applicative((<$>), (<*>))
@@ -23,12 +24,14 @@ import           Text.URI(URI(..), parseURI)
 import           System.Posix.Env(getEnvDefault)
 import           Network.AMQP
 
-data AMQPEvent = AMQPEvent {
-                    amqpChannel :: B.ByteString,
-                    amqpData :: B.ByteString,
-                    amqpId :: Maybe B.ByteString,
-                    amqpName :: Maybe B.ByteString 
-                 }
+-- | The AMQPEvent represents and incomming message that should be
+-- mapped to an EventSource event.
+data AMQPEvent = AMQPEvent
+    { amqpChannel :: B.ByteString
+    , amqpData :: B.ByteString
+    , amqpId :: Maybe B.ByteString
+    , amqpName :: Maybe B.ByteString 
+    }
 
 instance FromJSON AMQPEvent where
     parseJSON (Object v) = AMQPEvent <$>
