@@ -12,12 +12,16 @@ import           Snap.Http.Server(quickHttpServe)
 import           Data.ByteString(ByteString)
 import           Blaze.ByteString.Builder(fromByteString)
 
+import qualified System.UUID.V4 as UUID
+
 import           AMQPListener(AMQPEvent(..), openEventChannel)
 import           EventStream(ServerEvent(..), eventStreamPull)
 
 main :: IO ()
 main = do
-    listener <- openEventChannel "eventsource.fanout" $ "eventsource.queue-" 
+    uuid <- UUID.uuid
+
+    listener <- openEventChannel "eventsource.fanout" $ "eventsource." ++ (show uuid)
 
     quickHttpServe $
         ifTop (serveFile "static/index.html") <|>
@@ -34,8 +38,8 @@ messagesFor channelId chan = do
 eventHandler :: Chan AMQPEvent -> Snap ()
 eventHandler chan = do
     chan'   <- liftIO $ dupChan chan
-    idParam <- getParam "id"
-    case idParam of
+    channelParam <- getParam "channel"
+    case channelParam of
         Just channelId -> eventStreamPull $ messagesFor channelId chan'
         Nothing -> do
           modifyResponse $ setResponseCode 401

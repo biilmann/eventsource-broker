@@ -3,7 +3,7 @@ var output = document.getElementById("output");
 setTimeout(function() {
   console.log("Loaded");
 
-  var evtSrc = new EventSource( "/eventsource?id=test" );
+  var evtSrc = new EventSource( "/eventsource?channel=test" );
 
   evtSrc.onopen = function(e) {
     console.log("Open %o", e);
