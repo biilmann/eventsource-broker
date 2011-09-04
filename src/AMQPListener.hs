@@ -8,7 +8,7 @@ import           Control.Applicative((<$>), (<*>))
 import           Control.Monad(mzero)
 import           Control.Monad.Fix(fix)
 import           Control.Concurrent(forkIO)
-import           Control.Concurrent.Chan(newChan, readChan, writeChan)
+import           Control.Concurrent.Chan(Chan, newChan, readChan, writeChan)
 
 import           Data.Aeson(FromJSON(..), Value(..), Result(..), fromJSON, json, (.:), (.:?))
 import           Data.Attoparsec(parse, maybeResult)
@@ -38,6 +38,7 @@ instance FromJSON AMQPEvent where
                            v .:? "name"
     parseJSON _           = mzero
 
+openEventChannel :: String -> String -> IO (Chan AMQPEvent)
 openEventChannel exchange queue = do
     amqpURI <- getEnvDefault "AMQP_URL" "amqp://guest:guest@127.0.0.1/"
 
@@ -60,11 +61,12 @@ openEventChannel exchange queue = do
     consumeMsgs chan queue NoAck (sendTo listener)
     return listener
 
-sendTo chan (msg, envelope) =
+sendTo :: Chan AMQPEvent -> (Message, Envelope) -> IO ()
+sendTo chan (msg, _) =
     case maybeResult $ parse json (B.concat $ LB.toChunks (msgBody msg)) of
         Just value -> case fromJSON value of
             Success event -> do
                 writeChan chan event
-            Error e       -> do
+            Error _       -> do
                 return ()
         Nothing    -> return ()
