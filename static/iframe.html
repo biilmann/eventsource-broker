@@ -1,0 +1,25 @@
+<!doctype html>
+<head><title>EventSource IFrame</title></head>
+<script src="/static/eventsource.polyfill.js"></script>
+<script>
+setTimeout(function() {
+  var channel = document.location.search.match(/channel=(.+)/)[1];
+  var evtSrc  = new EventSource( "/eventsource?channel=" + channel );
+
+  evtSrc.onopen = function(e) {
+    parent.postMessage('{"eshqEvent":"open", "channel": "' + channel +'"}', "*"); 
+  };
+
+  evtSrc.onerror = function(e) {
+    parent.postMessage('{"eshqEvent":"error", "channel": "' + channel +'"}', "*");
+  };
+
+  evtSrc.onmessage = function(e) {
+    parent.postMessage(JSON.stringify({
+      eshqEvent: "message",
+      originalEvent: e,
+      channel: channel
+    }), "*");
+  };
+}, 0);
+</script>

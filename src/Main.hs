@@ -9,25 +9,43 @@ import           Snap.Types
 import           Snap.Util.FileServe(serveFile, serveDirectory)
 import           Snap.Http.Server(quickHttpServe)
 
+import           Data.Maybe (isJust, fromJust)
 import           Data.ByteString(ByteString)
 import           Blaze.ByteString.Builder(fromByteString)
 
 import qualified System.UUID.V4 as UUID
 
-import           AMQPListener(AMQPEvent(..), openEventChannel)
+import           AMQPEvents(AMQPEvent(..), openEventChannel, publishEvent)
 import           EventStream(ServerEvent(..), eventSourceStream, eventSourceResponse)
+
 
 -- |Setup a channel listening to an AMQP exchange and start Snap
 main :: IO ()
 main = do
     uuid <- UUID.uuid
 
-    listener <- openEventChannel "eventsource.fanout" $ "eventsource." ++ (show uuid)
+    let queue = "eventsource." ++ (show uuid)
+
+    (publisher, listener) <- openEventChannel queue
 
     quickHttpServe $
         ifTop (serveFile "static/index.html") <|>
+        path "iframe" (serveFile "static/iframe.html") <|>
+        path "es.js" (serveFile "static/eshq.js") <|>
         dir "static" (serveDirectory "static") <|>
+        method POST (route [ ("event", postEvent publisher queue) ]) <|>
         route [ ("eventsource", eventSource listener) ]
+
+
+postEvent chan queue = do
+    channelParam <- getParam "channel"
+    dataParam    <- getParam "data"
+    if (isJust channelParam) && (isJust dataParam)
+        then do
+            liftIO $ publishEvent chan queue $ AMQPEvent (fromJust channelParam) (fromJust dataParam) Nothing Nothing
+            writeBS "OK"
+        else
+            badRequest
 
 
 -- |Stream events from a channel of AMQPEvents to EventSource
@@ -39,11 +57,15 @@ eventSource chan = do
         Just channelId -> do
           transport <- getTransport
           transport $ filterEvents channelId chan'
-        Nothing -> do
-          modifyResponse $ setResponseCode 401
-          writeBS "Bad Request - no channel id"
-          r <- getResponse
-          finishWith r
+        Nothing -> badRequest
+
+
+badRequest = do
+    modifyResponse $ setResponseCode 401
+    writeBS "Bad Request - no channel id"
+    r <- getResponse
+    finishWith r
+
 
 -- |Returns the transport method to use for this request
 getTransport :: Snap (IO ServerEvent -> Snap ())
