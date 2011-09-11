@@ -15,7 +15,7 @@ import           Blaze.ByteString.Builder(fromByteString)
 import qualified System.UUID.V4 as UUID
 
 import           AMQPListener(AMQPEvent(..), openEventChannel)
-import           EventStream(ServerEvent(..), eventStreamPull)
+import           EventStream(ServerEvent(..), eventSourceStream, eventSourceResponse)
 
 -- |Setup a channel listening to an AMQP exchange and start Snap
 main :: IO ()
@@ -36,12 +36,21 @@ eventSource chan = do
     chan'   <- liftIO $ dupChan chan
     channelParam <- getParam "channel"
     case channelParam of
-        Just channelId -> eventStreamPull $ filterEvents channelId chan'
+        Just channelId -> do
+          transport <- getTransport
+          transport $ filterEvents channelId chan'
         Nothing -> do
           modifyResponse $ setResponseCode 401
           writeBS "Bad Request - no channel id"
           r <- getResponse
           finishWith r
+
+-- |Returns the transport method to use for this request
+getTransport :: Snap (IO ServerEvent -> Snap ())
+getTransport = withRequest $ \request ->
+    case getHeader "X-Requested-With" request of
+      Just "XMLHttpRequest" -> return eventSourceResponse
+      _                     -> return eventSourceStream
 
 -- |Filter AMQPEvents by channelId
 filterEvents :: ByteString -> Chan AMQPEvent -> IO ServerEvent

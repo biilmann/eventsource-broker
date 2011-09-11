@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 {-
-  See https://github.com/cdsmith/gloss-web
+  Based on https://github.com/cdsmith/gloss-web
 
   Copyright (c)2011, Chris Smith <cdsmith@gmail.com>
 
@@ -41,8 +41,8 @@
 -}
 module EventStream (
     ServerEvent(..),
-    eventStreamPull,
-    eventStreamPush
+    eventSourceStream,
+    eventSourceResponse
     ) where
 
 import Blaze.ByteString.Builder
@@ -105,11 +105,11 @@ flushAfter b = b `mappend` flush
     Converts a 'ServerEvent' to its wire representation as specified by the
     @text/event-stream@ content type.
 -}
-eventToBuilder :: ServerEvent -> Maybe Builder
-eventToBuilder (CommentEvent txt) = Just $ flushAfter $ field commentField txt
-eventToBuilder (RetryEvent   n)   = Just $ flushAfter $ field retryField (fromShow n)
-eventToBuilder (CloseEvent)       = Nothing
-eventToBuilder (ServerEvent n i d)= Just $ flushAfter $
+eventSourceBuilder :: ServerEvent -> Maybe Builder
+eventSourceBuilder (CommentEvent txt) = Just $ flushAfter $ field commentField txt
+eventSourceBuilder (RetryEvent   n)   = Just $ flushAfter $ field retryField (fromShow n)
+eventSourceBuilder (CloseEvent)       = Nothing
+eventSourceBuilder (ServerEvent n i d)= Just $ flushAfter $
     (name n $ evid i $ mconcat (map (field dataField) d)) `mappend` nl
   where
     name Nothing  = id
@@ -119,24 +119,40 @@ eventToBuilder (ServerEvent n i d)= Just $ flushAfter $
 
 
 {-|
-    Sets up this request to act as an event stream, obtaining its events from
-    polling the given IO action.
+    Send a stream of events to the client. Takes a function to convert an
+    event to a builder. If that function returns Nothing the stream is closed.
 -}
-eventStreamPull :: IO ServerEvent -> Snap ()
-eventStreamPull source = do
-    modifyResponse (setContentType "text/event-stream")
+eventStream :: IO ServerEvent -> (ServerEvent -> Maybe Builder) -> Snap ()
+eventStream source builder = do
     timeout <- getTimeoutAction
     modifyResponse $ setResponseBody $
-        generateM (timeout 3600 >> fmap eventToBuilder source)
+        generateM (timeout 3600 >> fmap builder source)
 
 
 {-|
-    Sets up this request to act as an event stream, returning an action to send
-    events along the stream.
+    Return a single response when the source returns an event. Takes a function
+    used to convert the event to a builder.
 -}
-eventStreamPush :: Snap (ServerEvent -> IO ())
-eventStreamPush = do
-    chan <- liftIO newChan
-    eventStreamPull (readChan chan)
-    return (writeChan chan)
+eventResponse :: IO ServerEvent -> (ServerEvent -> Maybe Builder) -> Snap ()
+eventResponse source builder = do
+    event <- liftIO $ fmap builder source
+    case event of
+      Just b  -> writeBuilder b
+      Nothing -> getResponse >>= \r -> finishWith r
 
+
+{-|
+    Sets up this request to act as an event stream, obtaining its events from
+    polling the given IO action.
+-}
+eventSourceStream source = do
+    modifyResponse $ setContentType "text/event-stream"
+                   . setHeader "Cache-Control" "no-cache"
+    eventStream source eventSourceBuilder
+
+
+-- |Long polling fallback - sends a single response when an event is pulled
+eventSourceResponse source = do
+    modifyResponse $ setContentType "text/event-stream"
+                   . setHeader "Cache-Control" "no-cache"
+    eventResponse source eventSourceBuilder

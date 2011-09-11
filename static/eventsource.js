@@ -1,5 +1,9 @@
 var output = document.getElementById("output");
 
+if (typeof(console) == "undefined") {
+  console = {log: function() {}};
+}
+
 setTimeout(function() {
   console.log("Loaded");
 
