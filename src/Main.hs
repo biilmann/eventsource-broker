@@ -18,20 +18,28 @@ import qualified System.UUID.V4 as UUID
 import           AMQPEvents(AMQPEvent(..), openEventChannel, publishEvent)
 import           EventStream(ServerEvent(..), eventSourceStream, eventSourceResponse)
 
+import           System.Posix.Env(getEnvDefault)
+
+import					 Text.StringTemplate
+
 
 -- |Setup a channel listening to an AMQP exchange and start Snap
 main :: IO ()
 main = do
-    uuid <- UUID.uuid
+    uuid			<- UUID.uuid
+    origin 		<- getEnvDefault "ORIGIN" "http://127.0.0.1"
+    templates <- directoryGroup "templates" :: IO (STGroup ByteString)
 
     let queue = "eventsource." ++ (show uuid)
 
     (publisher, listener) <- openEventChannel queue
 
+    let Just js = fmap (render . (setAttribute "origin" origin)) (getStringTemplate "eshq.js" templates)
+
     quickHttpServe $
         ifTop (serveFile "static/index.html") <|>
         path "iframe" (serveFile "static/iframe.html") <|>
-        path "es.js" (serveFile "static/eshq.js") <|>
+        path "es.js" (writeBS js) <|>
         dir "static" (serveDirectory "static") <|>
         method POST (route [ ("event", postEvent publisher queue) ]) <|>
         route [ ("eventsource", eventSource listener) ]
