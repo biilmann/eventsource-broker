@@ -130,7 +130,7 @@ eventSourceEnum source builder timeoutAction finalizer = go
         Just (Just b)  -> k (Chunks [b]) >>== go
         Just Nothing -> k EOF
         Nothing -> do
-          k (Chunks [flushAfter $ field commentField "ping"]) >>== go
+          k (Chunks [flushAfter $ field commentField (fromString "ping")]) >>== go
     go step = do
       liftIO finalizer
       returnI step
