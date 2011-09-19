@@ -27,14 +27,21 @@
   var openChannel = function(channel) {
       var iframe = document.createElement("iframe");
       iframe.setAttribute("style", "display: none;");
-      iframe.setAttribute("src", origin + "/iframe?channel="+channel);
+      iframe.setAttribute("src", origin + "/iframe?channel=" + channel + "&t=" + new Date().getTime());
       document.body.appendChild(iframe);
+      subs[channel].frame = iframe;
   };
 
   window.eshq = {
-    subscribe: function(channel, options) {
+    open: function(channel, options) {
       subs[channel] = new Sub(channel, options || {});
       openChannel(channel);
+    },
+    send: function(channel, data) {
+      var sub = subs[channel];
+      if (!sub) throw "You must open a channel before sending to it";
+
+      sub.frame.contentWindow.postMessage(data, "*");
     }
   };
 })();

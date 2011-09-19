@@ -1,72 +1,102 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import           Control.Applicative((<|>))
-import           Control.Monad.Trans(liftIO)
-import           Control.Concurrent.Chan(Chan, readChan, dupChan)
+import           Control.Applicative ((<|>))
+import           Control.Monad.Trans (liftIO)
+import           Control.Concurrent.Chan (Chan, readChan, dupChan)
+import           Control.Exception (bracket)
 
 import           Snap.Types
-import           Snap.Util.FileServe(serveFile, serveDirectory)
-import           Snap.Http.Server(quickHttpServe)
+import           Snap.Util.FileServe (serveFile, serveDirectory)
+import           Snap.Http.Server( quickHttpServe)
 
 import           Data.Maybe (isJust, fromJust)
 import           Data.ByteString(ByteString)
+import qualified Data.ByteString.Char8 as BS
+import           Data.UString (UString, u)
+import qualified Data.UString as US
 import           Blaze.ByteString.Builder(fromByteString)
 
 import qualified System.UUID.V4 as UUID
 
 import           AMQPEvents(AMQPEvent(..), openEventChannel, publishEvent)
 import           EventStream(ServerEvent(..), eventSourceStream, eventSourceResponse)
+import           DB
 
 import           System.Posix.Env(getEnvDefault)
 
-import					 Text.StringTemplate
+import           Text.StringTemplate
 
 
 -- |Setup a channel listening to an AMQP exchange and start Snap
 main :: IO ()
 main = do
-    uuid			<- UUID.uuid
-    origin 		<- getEnvDefault "ORIGIN" "http://127.0.0.1"
+    uuid      <- fmap show UUID.uuid
+    origin    <- getEnvDefault "ORIGIN" "http://127.0.0.1"
     templates <- directoryGroup "templates" :: IO (STGroup ByteString)
 
-    let queue = "eventsource." ++ (show uuid)
+    let queue = "eventsource." ++ uuid
+    let Just js = fmap (render . (setAttribute "origin" origin)) (getStringTemplate "eshq.js" templates)
 
     (publisher, listener) <- openEventChannel queue
 
-    let Just js = fmap (render . (setAttribute "origin" origin)) (getStringTemplate "eshq.js" templates)
-
-    quickHttpServe $
+    withDB $ \db -> quickHttpServe $
         ifTop (serveFile "static/index.html") <|>
         path "iframe" (serveFile "static/iframe.html") <|>
         path "es.js" (writeBS js) <|>
         dir "static" (serveDirectory "static") <|>
-        method POST (route [ ("event", postEvent publisher queue) ]) <|>
-        route [ ("eventsource", eventSource listener) ]
+        method POST (route [ 
+            ("event", postEvent db publisher queue),
+            ("socket", createSocket db uuid)
+        ]) <|>
+        route [ ("eventsource", eventSource db uuid listener) ]
 
+createSocket db uuid = do
+    withParam "channel" $ \channel -> do
+      socketId <- liftIO $ fmap show UUID.uuid
+      result   <- liftIO $ storeConnection db (u uuid) (u socketId) (US.fromByteString_ channel) True
+      case result of
+        Left  _ -> badRequest
+        Right _ -> writeBS $ BS.pack ("{\"socket\": \"" ++ socketId ++ "\"}")
 
-postEvent chan queue = do
-    channelParam <- getParam "channel"
-    dataParam    <- getParam "data"
-    if (isJust channelParam) && (isJust dataParam)
-        then do
-            liftIO $ publishEvent chan queue $ AMQPEvent (fromJust channelParam) (fromJust dataParam) Nothing Nothing
-            writeBS "OK"
-        else
-            badRequest
+postEvent db chan queue = do
+    withChannel db $ \_ channelId -> do
+        withParam "data" (\dataParam -> do
+            liftIO $ publishEvent chan queue $ AMQPEvent (US.toByteString channelId) dataParam Nothing Nothing
+            writeBS "OK")
 
 
 -- |Stream events from a channel of AMQPEvents to EventSource
-eventSource :: Chan AMQPEvent -> Snap ()
-eventSource chan = do
+eventSource :: DB -> String -> Chan AMQPEvent -> Snap ()
+eventSource db uuid chan = do
     chan'   <- liftIO $ dupChan chan
-    channelParam <- getParam "channel"
-    case channelParam of
-        Just channelId -> do
-          transport <- getTransport
-          transport $ filterEvents channelId chan'
-        Nothing -> badRequest
+    withChannel db $ \socketId channelId -> do
+      liftIO $ before socketId channelId
+      transport <- getTransport
+      transport (filterEvents (US.toByteString channelId) chan') (after socketId)
+  where
+    before socketId channelId = do
+        putStrLn "Removing diconnect_at"
+        storeConnection db (u uuid) (US.fromByteString_ socketId) channelId False
+        return ()
+    after socketId = do
+        putStrLn "Closing connection"
+        markConnection db (US.fromByteString_ socketId)
+        return ()
 
+
+withParam param fn = do
+    param' <- getParam param
+    case param' of
+        Just value -> fn value
+        Nothing    -> badRequest
+
+withChannel db fn = do
+    withParam "socket" $ \socketId -> do
+        channel <- liftIO $ getChannel db (US.fromByteString_ socketId)
+        case channel of
+            Just channelId -> fn socketId channelId
+            Nothing -> badRequest
 
 badRequest = do
     modifyResponse $ setResponseCode 401
@@ -76,7 +106,7 @@ badRequest = do
 
 
 -- |Returns the transport method to use for this request
-getTransport :: Snap (IO ServerEvent -> Snap ())
+getTransport :: Snap (IO ServerEvent -> IO () -> Snap ())
 getTransport = withRequest $ \request ->
     case getHeader "X-Requested-With" request of
       Just "XMLHttpRequest" -> return eventSourceResponse

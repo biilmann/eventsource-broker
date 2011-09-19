@@ -1,4 +1,6 @@
 (function() {
+  var origin = "$origin$";
+
   var Sub = function(channel, options) {
     for (var i in options) {
       this[i] = options[i];
@@ -9,7 +11,7 @@
   var subs = {};
 
   var onMessage = function(event) {
-    if (event.origin !== "http://eventsourcehq.local:8000") { return; }
+    if (event.origin !== origin) { return; }
 
     var data = JSON.parse(event.data);
     if (!data.eshqEvent) { return; }
@@ -25,7 +27,7 @@
   var openChannel = function(channel) {
       var iframe = document.createElement("iframe");
       iframe.setAttribute("style", "display: none;");
-      iframe.setAttribute("src", "http://eventsourcehq.local:8000/iframe?channel="+channel);
+      iframe.setAttribute("src", origin + "/iframe?channel="+channel);
       document.body.appendChild(iframe);
   };
 

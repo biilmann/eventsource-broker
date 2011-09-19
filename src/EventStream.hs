@@ -49,9 +49,12 @@ import Blaze.ByteString.Builder
 import Blaze.ByteString.Builder.Char8
 import Control.Monad.Trans
 import Control.Concurrent
+import Control.Exception (onException)
 import Data.Monoid
-import Data.Enumerator.List (generateM)
+import Data.Enumerator (Step(..), Stream(..), (>>==), returnI)
+-- import Data.Enumerator.List (generateM)
 import Snap.Types
+import System.Timeout
 
 {-|
     Type representing a communication over an event stream.  This can be an
@@ -118,41 +121,62 @@ eventSourceBuilder (ServerEvent n i d)= Just $ flushAfter $
     evid (Just i) = mappend (field idField   i)
 
 
+eventSourceEnum source builder timeoutAction finalizer = go
+  where
+    go (Continue k) = do
+      liftIO $ timeoutAction 15
+      event <- liftIO $ timeout 10000000 source
+      case fmap builder event of
+        Just (Just b)  -> k (Chunks [b]) >>== go
+        Just Nothing -> k EOF
+        Nothing -> do
+          k (Chunks [flushAfter $ fromByteString ":ping"]) >>== go
+    go step = do
+      liftIO finalizer
+      returnI step
+
+
 {-|
     Send a stream of events to the client. Takes a function to convert an
     event to a builder. If that function returns Nothing the stream is closed.
 -}
-eventStream :: IO ServerEvent -> (ServerEvent -> Maybe Builder) -> Snap ()
-eventStream source builder = do
-    timeout <- getTimeoutAction
+eventStream :: IO ServerEvent -> (ServerEvent -> Maybe Builder) -> IO () -> Snap ()
+eventStream source builder finalizer = do
+    timeoutAction <- getTimeoutAction
     modifyResponse $ setResponseBody $
-        generateM (timeout 3600 >> fmap builder source)
+        eventSourceEnum source builder timeoutAction finalizer
+    {- timeout <- getTimeoutAction-}
+    {- modifyResponse $ setResponseBody $-}
+    {-     generateM (timeout 1 >> fmap builder source)-}
 
 
 {-|
     Return a single response when the source returns an event. Takes a function
     used to convert the event to a builder.
 -}
-eventResponse :: IO ServerEvent -> (ServerEvent -> Maybe Builder) -> Snap ()
-eventResponse source builder = do
-    event <- liftIO $ fmap builder source
-    case event of
+eventResponse :: IO ServerEvent -> (ServerEvent -> Maybe Builder) -> IO () -> Snap ()
+eventResponse source builder finalizer = do
+    event <- liftIO $ source `onException` finalizer
+    case builder event of
       Just b  -> writeBuilder b
-      Nothing -> getResponse >>= \r -> finishWith r
+      Nothing -> do
+        liftIO finalizer
+        response <- getResponse
+        finishWith response
 
 
 {-|
     Sets up this request to act as an event stream, obtaining its events from
     polling the given IO action.
 -}
-eventSourceStream source = do
+eventSourceStream source finalizer = do
     modifyResponse $ setContentType "text/event-stream"
                    . setHeader "Cache-Control" "no-cache"
-    eventStream source eventSourceBuilder
+    eventStream source eventSourceBuilder finalizer
 
 
 -- |Long polling fallback - sends a single response when an event is pulled
-eventSourceResponse source = do
+eventSourceResponse source finalizer = do
     modifyResponse $ setContentType "text/event-stream"
                    . setHeader "Cache-Control" "no-cache"
-    eventResponse source eventSourceBuilder
+    eventResponse source eventSourceBuilder finalizer
