@@ -91,7 +91,7 @@ getChannel db socketId = do
       Left _           -> return Nothing
 
 
-disconnectTime = fmap (posixSecondsToUTCTime . (+ 30)) getPOSIXTime
+disconnectTime = fmap (posixSecondsToUTCTime . (+ 15)) getPOSIXTime
 
 
 openConn mongoURI = do

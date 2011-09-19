@@ -124,8 +124,8 @@ eventSourceBuilder (ServerEvent n i d)= Just $ flushAfter $
 eventSourceEnum source builder timeoutAction finalizer = go
   where
     go (Continue k) = do
-      liftIO $ timeoutAction 15
-      event <- liftIO $ timeout 10000000 source
+      liftIO $ timeoutAction 10
+      event <- liftIO $ timeout 9000000 source
       case fmap builder event of
         Just (Just b)  -> k (Chunks [b]) >>== go
         Just Nothing -> k EOF
