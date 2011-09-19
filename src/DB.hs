@@ -3,9 +3,12 @@ module DB
     (
       DB,
       withDB,
+      openDB,
+      closeDB,
       storeConnection,
       markConnection,
       sweepConnections,
+      disconnectBroker,
       getChannel
     ) where
 
@@ -38,6 +41,12 @@ data DB = DB
 data Credentials = NoAuth
                  | Credentials { crUser :: UString, crPass :: UString }
 
+openDB = do
+    mongoURI <- getEnvDefault "MONGO_URL" "mongodb://127.0.0.1:27017/eventsourcehq"
+    openConn mongoURI
+
+closeDB = do
+    closeConn
 
 withDB f = do
     mongoURI <- getEnvDefault "MONGO_URL" "mongodb://127.0.0.1:27017/eventsourcehq"
@@ -69,6 +78,9 @@ sweepConnections db brokerId = do
     time <- getCurrentTime
     run db $ delete (select ["broker" =: brokerId, "disconnect_at" =: ["$lte" =: time]] "connections")
 
+disconnectBroker :: DB -> UString -> IO (Either Failure ())
+disconnectBroker db brokerId = 
+    run db $ delete (select ["broker" =: brokerId] "connections")
 
 getChannel :: DB -> UString -> IO (Maybe UString)
 getChannel db socketId = do

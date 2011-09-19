@@ -3,6 +3,7 @@ module Main where
 
 import           Control.Applicative ((<|>))
 import           Control.Monad.Trans (liftIO)
+import           Control.Concurrent (forkIO, threadDelay)
 import           Control.Concurrent.Chan (Chan, readChan, dupChan)
 import           Control.Exception (bracket)
 
@@ -40,16 +41,24 @@ main = do
 
     (publisher, listener) <- openEventChannel queue
 
-    withDB $ \db -> quickHttpServe $
-        ifTop (serveFile "static/index.html") <|>
-        path "iframe" (serveFile "static/iframe.html") <|>
-        path "es.js" (writeBS js) <|>
-        dir "static" (serveDirectory "static") <|>
-        method POST (route [ 
-            ("event", postEvent db publisher queue),
-            ("socket", createSocket db uuid)
-        ]) <|>
-        route [ ("eventsource", eventSource db uuid listener) ]
+    bracket openDB (\db -> disconnectBroker db (u uuid) >> closeDB db) $ \db -> do
+        forkIO $ connectionSweeper db uuid
+        quickHttpServe $
+            ifTop (serveFile "static/index.html") <|>
+            path "iframe" (serveFile "static/iframe.html") <|>
+            path "es.js" (writeBS js) <|>
+            dir "static" (serveDirectory "static") <|>
+            method POST (route [ 
+                ("event", postEvent db publisher queue),
+                ("socket", createSocket db uuid)
+            ]) <|>
+            route [ ("eventsource", eventSource db uuid listener) ]
+
+
+connectionSweeper db uuid = do
+    threadDelay 15000000
+    sweepConnections db (u uuid)
+    connectionSweeper db uuid
 
 createSocket db uuid = do
     withParam "channel" $ \channel -> do
@@ -76,11 +85,9 @@ eventSource db uuid chan = do
       transport (filterEvents (US.toByteString channelId) chan') (after socketId)
   where
     before socketId channelId = do
-        putStrLn "Removing diconnect_at"
         storeConnection db (u uuid) (US.fromByteString_ socketId) channelId False
         return ()
     after socketId = do
-        putStrLn "Closing connection"
         markConnection db (US.fromByteString_ socketId)
         return ()
 
