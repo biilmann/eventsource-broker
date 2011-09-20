@@ -2,6 +2,7 @@
 module AMQPEvents
     (
       AMQPEvent(..)
+    , Channel
     , openEventChannel
     , publishEvent
     ) where
