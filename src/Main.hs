@@ -115,7 +115,7 @@ eventSource db uuid chan = do
       transport <- getTransport
       transport (filterEvents (US.toByteString $ channel conn) chan') (after conn)
   where
-    before conn = storeConnection db conn >> return ()
+    before conn = storeConnection db conn { brokerId = uuid } >> return ()
     after conn = markConnection db (conn { disconnectAt = Just 10 } ) >> return ()
 
 serveJS :: ByteString -> Snap ()
