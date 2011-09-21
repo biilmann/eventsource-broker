@@ -2,6 +2,7 @@
 module DB 
     (
       DB,
+      ESConnection(..),
       withDB,
       openDB,
       closeDB,
@@ -9,7 +10,8 @@ module DB
       markConnection,
       sweepConnections,
       disconnectBroker,
-      getChannel
+      getConnection,
+      getConnectionCount
     ) where
 
 import           Prelude hiding (lookup)
@@ -25,17 +27,30 @@ import           Data.Maybe (fromJust)
 import           Data.Time.Clock (UTCTime, getCurrentTime)
 import           Data.Time.Clock.POSIX (getPOSIXTime, posixSecondsToUTCTime)
 
-import					 Database.MongoDB (
+import          Database.MongoDB (
                     Action, Pipe, Database, Failure, runIOE, connect, auth, access, master,
                     readHostPort, close, repsert, modify, delete, (=:), select,
-                    findOne, lookup
+                    findOne, count, lookup, at
                  )
 
+-- |A connection to a mongoDB
 data DB = DB { mongoPipe :: Pipe, mongoDB :: Database }
 
 
+-- |Credentials for authenticating with a mongoDB
 data Credentials = NoAuth
                  | Credentials { crUser :: UString, crPass :: UString }
+
+
+-- |An eventSource connection to the broker persisted in mongoDB
+data ESConnection = ESConnection 
+    { socketId :: UString
+    , brokerId :: UString
+    , channel  :: UString
+    , userId   :: Maybe UString
+    , disconnectAt :: Maybe Int -- Seconds from current time
+    }
+
 
 -- |Opens a connection to the database speficied in the MONGO_URL
 -- environment variable
@@ -44,10 +59,12 @@ openDB = do
     mongoURI <- getEnvDefault "MONGO_URL" "mongodb://127.0.0.1:27017/eventsourcehq"
     openConn mongoURI
 
+
 -- |Close the connection to the database
 closeDB :: DB -> IO ()
 closeDB = do
     closeConn
+
 
 -- |Bracket around opening and closing the DB connection
 withDB :: (DB -> IO ()) -> IO ()
@@ -60,53 +77,65 @@ withDB f = do
 -- |Store a "connection" to the broker in the database
 -- If the disconnect is set, the connection will be marked for
 -- disconnection during a coming sweep
-storeConnection :: DB -> UString -> UString -> UString -> Bool -> IO (Either Failure ())
-storeConnection db brokerId socketId channel disconnect = do
-    time <- disconnectTime
-    run db $ repsert (select s "connections") (d disconnect time)
+storeConnection :: DB -> ESConnection -> IO (Either Failure ())
+storeConnection db conn= do
+    time <- disconnectTime (disconnectAt conn)
+    run db $ repsert (select s "connections") (d time)
   where
-    s = ["_id" =: socketId, "channel" =: channel]
-    d True time = s ++ ["broker" =: brokerId, "disconnect_at" =: time]
-    d False _   = s ++ ["broker" =: brokerId]
+    s = ["_id" =: socketId conn, "channel" =: channel conn]
+    d (Just time) = s ++ ["broker" =: brokerId conn, "disconnect_at" =: time]
+    d Nothing     = s ++ ["broker" =: brokerId conn]
 
 
 -- |Mark a connection. Marked connections will be removed by a later
 -- sweep
-markConnection :: DB -> UString -> IO (Either Failure ())
-markConnection db socketId = do
-    time <- disconnectTime
-    run db $ modify (select s "connections") (m time)
+markConnection :: DB -> ESConnection -> IO (Either Failure ())
+markConnection db conn = do
+    case disconnectAt conn of
+        Just offset -> do
+            time <- disconnectTime (Just offset)
+            run db $ modify (select s "connections") (m time)
+        Nothing -> return $ Right ()
   where
-    s = ["_id" =: socketId]
+    s = ["_id" =: (socketId conn)]
     m time = ["$set" =: ["disconnect_at" =: time]]
 
 
 -- |Sweep connections. All marked connections with a disconnect_at less
 -- than the current time will be removed.
 sweepConnections :: DB -> UString -> IO (Either Failure ())
-sweepConnections db brokerId = do
+sweepConnections db bid = do
     time <- getCurrentTime
-    run db $ delete (select ["broker" =: brokerId, "disconnect_at" =: ["$lte" =: time]] "connections")
+    run db $ delete (select ["broker" =: bid, "disconnect_at" =: ["$lte" =: time]] "connections")
 
 
 -- |Remove all connections from a broker from the db
 disconnectBroker :: DB -> UString -> IO (Either Failure ())
-disconnectBroker db brokerId = 
-    run db $ delete (select ["broker" =: brokerId] "connections")
+disconnectBroker db bid = 
+    run db $ delete (select ["broker" =: bid] "connections")
 
 
--- |Get the "channel" for a specific connection
-getChannel :: DB -> UString -> IO (Maybe UString)
-getChannel db socketId = do
-    result <- run db $ findOne (select ["_id" =: socketId] "connections")
+getConnection :: DB -> UString -> IO (Maybe ESConnection)
+getConnection db sid = do
+    result <- run db $ findOne (select ["_id" =: sid] "connections")
     case result of
-      Right (Just doc) -> return $ lookup "channel" doc
-      Right Nothing    -> return Nothing
-      Left _           -> return Nothing
+        Right (Just doc) -> return $ Just ESConnection {
+              brokerId     = at "broker" doc
+            , socketId     = at "_id" doc
+            , channel      = at "channel" doc
+            , userId       = lookup "user_id" doc
+            , disconnectAt = Nothing
+        }
+        _                -> return Nothing
+
+getConnectionCount :: DB -> UString -> IO (Either Failure Int)
+getConnectionCount db bid =
+    run db $ count (select ["broker" =: bid] "connections")
 
 
-disconnectTime :: IO UTCTime
-disconnectTime = fmap (posixSecondsToUTCTime . (+ 15)) getPOSIXTime
+disconnectTime :: Maybe Int -> IO (Maybe UTCTime)
+disconnectTime (Just offset) = fmap (Just . posixSecondsToUTCTime . (+ (fromIntegral offset))) getPOSIXTime 
+disconnectTime Nothing       = return Nothing
 
 
 openConn :: String -> IO DB

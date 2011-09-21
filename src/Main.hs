@@ -11,7 +11,6 @@ import           Snap.Types
 import           Snap.Util.FileServe (serveFile, serveDirectory)
 import           Snap.Http.Server( quickHttpServe)
 
-import           Data.Maybe (isJust, fromJust)
 import           Data.ByteString(ByteString)
 import qualified Data.ByteString.Char8 as BS
 import           Data.UString (UString, u)
@@ -46,13 +45,16 @@ main = do
         quickHttpServe $
             ifTop (serveFile "static/index.html") <|>
             path "iframe" (serveFile "static/iframe.html") <|>
-            path "es.js" (writeBS js) <|>
+            path "es.js" (serveJS js) <|>
             dir "static" (serveDirectory "static") <|>
             method POST (route [ 
                 ("event", postEvent db publisher queue),
                 ("socket", createSocket db uuid)
             ]) <|>
-            route [ ("eventsource", eventSource db uuid listener) ]
+            method GET (route [
+                ("broker", brokerInfo db uuid),
+                ("eventsource", eventSource db uuid listener) 
+            ])
 
 
 -- |Clean up disconnected connections for this broker at regular intervals
@@ -63,24 +65,44 @@ connectionSweeper db uuid = do
     connectionSweeper db uuid
 
 
+brokerInfo :: DB -> UString -> Snap ()
+brokerInfo db uuid = do
+    result <- liftIO $ getConnectionCount db uuid
+    case result of
+        Right count -> do
+            modifyResponse $ setContentType "application/json"
+            writeBS $ BS.pack $ "{\"brokerId\": \"" ++ (show uuid) ++ "\", \"connections\": " ++ (show count) ++ "}"
+        Left e -> do
+            modifyResponse $ setResponseCode 500
+            writeBS $ BS.pack $ "Database Connection Problem: " ++ (show e)
+
 -- |Create a new socket and return the ID
 createSocket :: DB -> UString -> Snap ()
 createSocket db uuid = do
-    withParam "channel" $ \channel -> do
-      socketId <- liftIO $ fmap show UUID.uuid
-      result   <- liftIO $ storeConnection db uuid (u socketId) channel True
+    withParam "channel" $ \cid -> do
+      sid <- liftIO $ fmap show UUID.uuid
+      uid <- getParam "user_id"
+      result   <- liftIO $ storeConnection db ESConnection {
+            socketId     = u sid
+          , brokerId     = uuid
+          , channel      = cid
+          , userId       = fmap US.fromByteString_ uid
+          , disconnectAt = Just 10
+      }
       case result of
         Left  _ -> badRequest
-        Right _ -> writeBS $ BS.pack ("{\"socket\": \"" ++ socketId ++ "\"}")
+        Right _ -> do
+            modifyResponse $ setContentType "application/json"
+            writeBS $ BS.pack ("{\"socket\": \"" ++ sid ++ "\"}")
 
 
 -- |Post a new event.
 postEvent :: DB -> Channel -> UString -> Snap ()
 postEvent db chan queue = do
-    withChannel db $ \_ channelId -> do
+    withConnection db $ \conn -> do
         withParam "data" (\dataParam -> do
             liftIO $ publishEvent chan (show queue) $ 
-                AMQPEvent (US.toByteString channelId) (US.toByteString dataParam) Nothing Nothing
+                AMQPEvent (US.toByteString $ channel conn) (US.toByteString dataParam) Nothing Nothing
             writeBS "OK")
 
 
@@ -88,17 +110,19 @@ postEvent db chan queue = do
 eventSource :: DB -> UString -> Chan AMQPEvent -> Snap ()
 eventSource db uuid chan = do
     chan'   <- liftIO $ dupChan chan
-    withChannel db $ \socketId channelId -> do
-      liftIO $ before socketId channelId
+    withConnection db $ \conn -> do
+      liftIO $ before conn
       transport <- getTransport
-      transport (filterEvents (US.toByteString channelId) chan') (after socketId)
+      transport (filterEvents (US.toByteString $ channel conn) chan') (after conn)
   where
-    before socketId channelId = do
-        storeConnection db uuid socketId channelId False
-        return ()
-    after socketId = do
-        markConnection db socketId
-        return ()
+    before conn = storeConnection db conn >> return ()
+    after conn = markConnection db (conn { disconnectAt = Just 10 } ) >> return ()
+
+serveJS :: ByteString -> Snap ()
+serveJS js = do
+    modifyResponse $ setContentType "text/javascript; charset=UTF-8"
+    writeBS js
+
 
 withParam :: UString -> (UString -> Snap ()) -> Snap ()
 withParam param fn = do
@@ -107,13 +131,15 @@ withParam param fn = do
         Just value -> fn (US.fromByteString_ value)
         Nothing    -> badRequest
 
-withChannel :: DB -> (UString -> UString -> Snap ()) -> Snap ()
-withChannel db fn = do
-    withParam "socket" $ \socketId -> do
-        channel <- liftIO $ getChannel db socketId
-        case channel of
-            Just channelId -> fn socketId channelId
-            Nothing -> badRequest
+
+withConnection :: DB -> (ESConnection -> Snap ()) -> Snap ()
+withConnection db fn = do
+    withParam "socket" $ \sid -> do
+        result <- liftIO $ getConnection db sid
+        case result of
+            Just conn -> fn conn
+            Nothing   -> badRequest
+
 
 badRequest :: Snap ()
 badRequest = do
