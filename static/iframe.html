@@ -1,5 +1,12 @@
 <!doctype html>
 <head><title>EventSource IFrame</title></head>
+<script>
+	if (typeof(window.addEventListener) == "undefined") {
+		window.addEventListener = function(name, fn) {
+			window.attachEvent("on" + name, fn);
+		};
+	}
+</script>
 <script src="/static/eventsource.polyfill.js"></script>
 <script>
 var channel = document.location.search.match(/channel=([^&]+)/)[1];
