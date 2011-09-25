@@ -33,21 +33,23 @@ type AMQPConn = (Channel, Chan AMQPEvent)
 -- mapped to an EventSource event.
 data AMQPEvent = AMQPEvent
     { amqpChannel :: B.ByteString
-    , amqpData :: B.ByteString
-    , amqpId :: Maybe B.ByteString
-    , amqpName :: Maybe B.ByteString 
+    , amqpUser    :: B.ByteString
+    , amqpData    :: B.ByteString
+    , amqpId      :: Maybe B.ByteString
+    , amqpName    :: Maybe B.ByteString 
     }
 
 instance FromJSON AMQPEvent where
     parseJSON (Object v) = AMQPEvent <$>
                            v .: "channel" <*>
-                           v .: "data" <*>
-                           v .:? "id" <*>
+                           v .: "user"    <*>
+                           v .: "data"    <*>
+                           v .:? "id"     <*>
                            v .:? "name"
     parseJSON _           = mzero
 
 instance ToJSON AMQPEvent where
-    toJSON (AMQPEvent c d i n) = object ["channel" .= c, "data" .= d, "id" .= i, "name" .= n]
+    toJSON (AMQPEvent c u d i n) = object ["channel" .= c, "user" .= u, "data" .= d, "id" .= i, "name" .= n]
 
 exchange = "eventsource.fanout"
 
