@@ -1,6 +1,14 @@
 (function() {
   var origin = "$origin$";
 
+  var post = function(path, data, callback) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', path, true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.onreadystatechange = callback;
+    xhr.send(data);
+  };
+
   var Sub = function(channel, options) {
     for (var i in options) {
       this[i] = options[i];
@@ -24,10 +32,19 @@
 
   window.addEventListener("message", onMessage, false);
 
-  var openChannel = function(channel) {
+  var getSocket = function(channel, url) {
+    post(url, "channel=" + channel, function() {
+      if (this.readyState == 4 && this.status == 200) {
+        var resp = JSON.parse(this.responseText);
+        openChannel(channel, resp.socket);
+      }
+    });
+  };
+
+  var openChannel = function(channel, socket) {
       var iframe = document.createElement("iframe");
       iframe.setAttribute("style", "display: none;");
-      iframe.setAttribute("src", origin + "/iframe?channel=" + channel + "&t=" + new Date().getTime());
+      iframe.setAttribute("src", origin + "/iframe?channel=" + channel + "&socket=" + socket + "&t=" + new Date().getTime());
       document.body.appendChild(iframe);
       subs[channel].frame = iframe;
   };
@@ -35,7 +52,7 @@
   window.eshq = {
     open: function(channel, options) {
       subs[channel] = new Sub(channel, options || {});
-      openChannel(channel);
+      getSocket(channel, options.auth_url || "/eshq/socket");
     },
     send: function(channel, data) {
       var sub = subs[channel];

@@ -57,7 +57,7 @@ main = do
             method POST (route [ 
                 ("event", postEvent db publisher queue),
                 ("socket", createSocket db uuid),
-                ("socket/:sid", postEventFromSocket db publisher queue)
+                ("socket/:socket", postEventFromSocket db publisher queue)
             ]) <|>
             method GET (route [
                 ("broker", brokerInfo db uuid),
