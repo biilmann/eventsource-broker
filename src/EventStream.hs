@@ -121,8 +121,9 @@ eventSourceBuilder (ServerEvent n i d)= Just $ flushAfter $
     evid (Just i) = mappend (field idField   i)
 
 
-eventSourceEnum source builder timeoutAction finalizer = go
+eventSourceEnum source builder timeoutAction finalizer = withInitialPing
   where
+    withInitialPing (Continue k) = k (Chunks [ping]) >>== go
     go (Continue k) = do
       liftIO $ timeoutAction 10
       event <- liftIO $ timeout 9000000 source
@@ -130,10 +131,11 @@ eventSourceEnum source builder timeoutAction finalizer = go
         Just (Just b)  -> k (Chunks [b]) >>== go
         Just Nothing -> k EOF
         Nothing -> do
-          k (Chunks [flushAfter $ field commentField (fromString "ping")]) >>== go
+          k (Chunks [ping]) >>== go
     go step = do
       liftIO finalizer
       returnI step
+    ping = flushAfter $ field commentField (fromString "ping")
 
 
 {-|
@@ -143,12 +145,8 @@ eventSourceEnum source builder timeoutAction finalizer = go
 eventStream :: IO ServerEvent -> (ServerEvent -> Maybe Builder) -> IO () -> Snap ()
 eventStream source builder finalizer = do
     timeoutAction <- getTimeoutAction
-    writeBuilder $ flushAfter $ field commentField (fromString "ping")
     modifyResponse $ setResponseBody $
         eventSourceEnum source builder timeoutAction finalizer
-    {- timeout <- getTimeoutAction-}
-    {- modifyResponse $ setResponseBody $-}
-    {-     generateM (timeout 1 >> fmap builder source)-}
 
 
 {-|
