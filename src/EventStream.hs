@@ -143,6 +143,7 @@ eventSourceEnum source builder timeoutAction finalizer = go
 eventStream :: IO ServerEvent -> (ServerEvent -> Maybe Builder) -> IO () -> Snap ()
 eventStream source builder finalizer = do
     timeoutAction <- getTimeoutAction
+    writeBuilder $ flushAfter $ field commentField (fromString "ping")
     modifyResponse $ setResponseBody $
         eventSourceEnum source builder timeoutAction finalizer
     {- timeout <- getTimeoutAction-}
