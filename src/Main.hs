@@ -100,7 +100,9 @@ createSocket db uuid = do
             , Conn.disconnectAt = Just 10
         }
         case result of
-          Left  _ -> showError 500 "Database Connection Error"
+          Left failure -> do
+              logError (BS.pack $ show failure)
+              showError 500 "Database Connection Error"
           Right _ -> do
               modifyResponse $ setContentType "application/json"
               writeBS $ BS.pack ("{\"socket\": \"" ++ socketId ++ "\"}")
