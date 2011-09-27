@@ -17,7 +17,9 @@ var post = function(path, data, callback) {
 	var xhr = new XMLHttpRequest();
 	xhr.open('POST', path, true);
 	xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-	xhr.onreadystatechange = callback;
+  if (callback) {
+  	xhr.onreadystatechange = callback;
+  }
 	xhr.send(data);
 };
 
@@ -25,7 +27,7 @@ setTimeout(function() {
   // on success
   var evtSrc  = new EventSource( "/eventsource?socket=" + socket );
 
-  if (eventSrc.readyState > 0) {
+  if (evtSrc.readyState > 0) {
     parent.postMessage('{"eshqEvent":"open", "channel": "' + channel +'"}', "*");
   } else {
     evtSrc.onopen = function(e) {
