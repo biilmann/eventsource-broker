@@ -29,6 +29,7 @@
 if ("EventSource" in window) return;
 
 var reTrim = /^(\s|\u00A0)+|(\s|\u00A0)+$/g;
+var onProgressSupport = navigator.userAgent.match(/Firefox/);
 
 var EventSource = function (url) {
   var eventsource = this,
@@ -62,7 +63,7 @@ var EventSource = function (url) {
 
       // we must make use of this on the server side unlesss we're using firefox - because they don't trigger
       // readychange until the server connection is closed
-      if (!navigator.userAgent.match(/Firefox/)) {
+      if (!onProgressSupport) {
         xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
       }
 
@@ -71,7 +72,7 @@ var EventSource = function (url) {
 
       xhr.timeout = 50000;
       xhr.onreadystatechange = function () {
-        if ((this.readyState == 3 || this.readyState == 4) && this.status == 200) {
+        if (((onProgressSupport && this.readyState == 3) || this.readyState == 4) && this.status == 200) {
           // on success
           if (eventsource.readyState == eventsource.CONNECTING) {
             eventsource.readyState = eventsource.OPEN;

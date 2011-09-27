@@ -1,6 +1,12 @@
 (function() {
   var origin = "$origin$";
 
+	if (typeof(window.addEventListener) == "undefined") {
+		window.addEventListener = function(name, fn) {
+			window.attachEvent("on" + name, fn);
+		};
+	}
+
   var post = function(path, data, callback) {
     var xhr = new XMLHttpRequest();
     xhr.open('POST', path, true);

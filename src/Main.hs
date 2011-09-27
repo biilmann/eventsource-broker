@@ -77,9 +77,8 @@ brokerInfo :: DB -> UString -> Snap ()
 brokerInfo db uuid = do
     result <- liftIO $ Conn.count db uuid
     case result of
-        Right count -> do
-            modifyResponse $ setContentType "application/json"
-            writeBS $ BS.pack $ "{\"brokerId\": " ++ (show uuid) ++ ", \"connections\": " ++ (show count) ++ "}"
+        Right count ->
+            sendJSON $ BS.pack $ "{\"brokerId\": " ++ (show uuid) ++ ", \"connections\": " ++ (show count) ++ "}"
         Left e -> do
             modifyResponse $ setResponseCode 500
             writeBS $ BS.pack $ "Database Connection Problem: " ++ (show e)
@@ -103,9 +102,8 @@ createSocket db uuid = do
           Left failure -> do
               logError (BS.pack $ show failure)
               showError 500 "Database Connection Error"
-          Right _ -> do
-              modifyResponse $ setContentType "application/json"
-              writeBS $ BS.pack ("{\"socket\": \"" ++ socketId ++ "\"}")
+          Right _ ->
+              sendJSON $ BS.pack ("{\"socket\": \"" ++ socketId ++ "\"}")
 
 
 postEvent :: DB -> Channel -> UString -> Snap ()
@@ -197,6 +195,12 @@ showError code msg = do
     writeBS msg
     r <- getResponse
     finishWith r
+
+
+sendJSON :: ByteString -> Snap ()
+sendJSON json = do
+    modifyResponse $ setContentType "application/json"
+    writeBS json
 
 
 -- |Returns the transport method to use for this request

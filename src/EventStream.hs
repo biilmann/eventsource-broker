@@ -103,6 +103,11 @@ field l b = l `mappend` b `mappend` nl
 -}
 flushAfter b = b `mappend` flush
 
+{-|
+    Send a comment with the string "ping" to the client.
+-}
+pingEvent = flushAfter $ field commentField (fromString "ping")
+
 
 {-|
     Converts a 'ServerEvent' to its wire representation as specified by the
@@ -123,7 +128,7 @@ eventSourceBuilder (ServerEvent n i d)= Just $ flushAfter $
 
 eventSourceEnum source builder timeoutAction finalizer = withInitialPing
   where
-    withInitialPing (Continue k) = k (Chunks [ping]) >>== go
+    withInitialPing (Continue k) = k (Chunks [pingEvent]) >>== go
     go (Continue k) = do
       liftIO $ timeoutAction 10
       event <- liftIO $ timeout 9000000 source
@@ -131,11 +136,10 @@ eventSourceEnum source builder timeoutAction finalizer = withInitialPing
         Just (Just b)  -> k (Chunks [b]) >>== go
         Just Nothing -> k EOF
         Nothing -> do
-          k (Chunks [ping]) >>== go
+          k (Chunks [pingEvent]) >>== go
     go step = do
       liftIO finalizer
       returnI step
-    ping = flushAfter $ field commentField (fromString "ping")
 
 
 {-|
@@ -155,6 +159,7 @@ eventStream source builder finalizer = do
 -}
 eventResponse :: IO ServerEvent -> (ServerEvent -> Maybe Builder) -> IO () -> Snap ()
 eventResponse source builder finalizer = do
+    writeBuilder pingEvent
     event <- liftIO $ source `onException` finalizer
     case builder event of
       Just b  -> writeBuilder b
