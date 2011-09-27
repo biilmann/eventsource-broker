@@ -159,7 +159,6 @@ eventStream source builder finalizer = do
 -}
 eventResponse :: IO ServerEvent -> (ServerEvent -> Maybe Builder) -> IO () -> Snap ()
 eventResponse source builder finalizer = do
-    writeBuilder pingEvent
     event <- liftIO $ source `onException` finalizer
     case builder event of
       Just b  -> writeBuilder b

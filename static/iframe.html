@@ -25,9 +25,13 @@ setTimeout(function() {
   // on success
   var evtSrc  = new EventSource( "/eventsource?socket=" + socket );
 
-  evtSrc.onopen = function(e) {
-    parent.postMessage('{"eshqEvent":"open", "channel": "' + channel +'"}', "*"); 
-  };
+  if (eventSrc.readyState > 0) {
+    parent.postMessage('{"eshqEvent":"open", "channel": "' + channel +'"}', "*");
+  } else {
+    evtSrc.onopen = function(e) {
+      parent.postMessage('{"eshqEvent":"open", "channel": "' + channel +'"}', "*");
+    };
+  }
 
   evtSrc.onerror = function(e) {
     parent.postMessage('{"eshqEvent":"error", "channel": "' + channel +'"}', "*");

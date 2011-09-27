@@ -72,13 +72,12 @@ var EventSource = function (url) {
 
       xhr.timeout = 50000;
       xhr.onreadystatechange = function () {
-        if (((onProgressSupport && this.readyState == 3) || this.readyState == 4) && this.status == 200) {
-          // on success
-          if (eventsource.readyState == eventsource.CONNECTING) {
-            eventsource.readyState = eventsource.OPEN;
-            eventsource.dispatchEvent('open', { type: 'open' });
-          }
+        if (eventsource.readyState == eventsource.CONNECTING) {
+          eventsource.readyState = eventsource.OPEN;
+          eventsource.dispatchEvent('open', { type: 'open' });
+        }
 
+        if (((onProgressSupport && this.readyState == 3) || this.readyState == 4) && this.status == 200) {
           // process this.responseText
           var parts = this.responseText.substr(cache.length).split("\n"),
               data = [],
