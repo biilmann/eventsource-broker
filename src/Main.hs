@@ -154,10 +154,7 @@ withParam param fn = do
 withConnection :: DB -> (Conn.Connection -> Snap ()) -> Snap ()
 withConnection db fn = do
     withParam "socket" $ \sid -> do
-        result <- liftIO $ Conn.get db sid
-        case result of
-            Just conn -> fn conn
-            Nothing   -> showError 404 $ BS.concat ["No socket found with id: ", utobs sid]
+        withDBResult (Conn.get db sid) (showError 404 "Socket Not Found") fn
 
 
 withAuth :: DB -> (User.User -> Snap ()) -> Snap ()
@@ -165,24 +162,32 @@ withAuth db handler = do
   key       <- getParam "key"
   token     <- getParam "token"
   timestamp <- getParam "timestamp"
-
   case (key, token, timestamp) of
     (Just key', Just token', Just timestamp') -> do
       currentTime <- liftIO getPOSIXTime
-      currentUser <- liftIO $ User.get db (ufrombs key')
-      case currentUser of
-        Just user -> 
-            if validTime timestamp' currentTime && User.authenticate user token' timestamp'
-              then handler user
-              else showError 401 "Access Denied"
-        Nothing -> showError 404 "User not found"
-    _ -> showError 400 "Bad Request - Missing authentication parameters"
+      withDBResult (User.get db (ufrombs key')) (showError 404 "User not found") $ \user ->
+          if validTime timestamp' currentTime && User.authenticate user token' timestamp'
+            then handler user
+            else showError 401 "Access Denied"
+
+
+withDBResult :: IO (Either Failure (Maybe a)) -> Snap () -> (a -> Snap ()) -> Snap ()
+withDBResult f notFound found= do
+    result <- liftIO f
+    case result of
+      Right (Just model) -> found model
+      Right Nothing      -> notFound
+      Left  failure      -> do
+          logError (BS.pack $ show failure)
+          showError 500 "Database Connection Error"
+
 
 validTime :: ByteString -> POSIXTime -> Bool
 validTime timestamp currentTime =
     let t1 = read $ BS.unpack timestamp
         t2 = floor currentTime in
         abs (t1 - t2) < 5 * 60
+
 
 showError :: Int -> ByteString -> Snap ()
 showError code msg = do
@@ -191,12 +196,14 @@ showError code msg = do
     r <- getResponse
     finishWith r
 
+
 -- |Returns the transport method to use for this request
 getTransport :: Snap (IO ServerEvent -> IO () -> Snap ())
 getTransport = withRequest $ \request ->
     case getHeader "X-Requested-With" request of
       Just "XMLHttpRequest" -> return eventSourceResponse
       _                     -> return eventSourceStream
+
 
 -- |Filter AMQPEvents by channelId
 filterEvents :: Conn.Connection -> Chan AMQPEvent -> IO ServerEvent

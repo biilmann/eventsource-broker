@@ -5,7 +5,7 @@ import           Prelude hiding (lookup)
 
 import           Data.Time.Clock (UTCTime, getCurrentTime)
 import           Data.Time.Clock.POSIX (getPOSIXTime, posixSecondsToUTCTime)
-import           Data.UString (UString, u)
+import           Data.UString (UString)
 
 import           DB
 
@@ -63,19 +63,22 @@ remove db bid =
     run db $ delete (select ["broker" =: bid] "connections")
 
 
-get :: DB -> UString -> IO (Maybe Connection)
+get :: DB -> UString -> IO (Either Failure (Maybe Connection))
 get db sid = do
     result <- run db $ findOne (select ["_id" =: sid] "connections")
-    case result of
-        Right (Just doc) -> return $ Just Connection {
-              brokerId     = at "broker" doc
-            , socketId     = at "_id" doc
-            , userId       = at "user_id" doc
-            , channel      = at "channel" doc
-            , presenceId   = lookup "presence_id" doc
-            , disconnectAt = Nothing
-        }
-        _                -> return Nothing
+    return $ returnModel constructor result
+
+
+constructor :: Document -> Connection
+constructor doc = Connection {
+                  brokerId     = at "broker" doc
+                , socketId     = at "_id" doc
+                , userId       = at "user_id" doc
+                , channel      = at "channel" doc
+                , presenceId   = lookup "presence_id" doc
+                , disconnectAt = Nothing
+                }
+
 
 count :: DB -> UString -> IO (Either Failure Int)
 count db bid =

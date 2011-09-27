@@ -2,10 +2,12 @@
 module DB 
     (
       DB,
+      Document,
       Failure,
       withDB,
       openDB,
       closeDB,
+      returnModel,
       run,
       repsert,
       modify,
@@ -30,7 +32,7 @@ import           Data.UString (UString, u)
 import           Data.Maybe (fromJust)
 
 import          Database.MongoDB (
-                    Action, Pipe, Database, Failure, runIOE, connect, auth, access, master,
+                    Action, Pipe, Database, Document, Failure, runIOE, connect, auth, access, master,
                     readHostPort, close, repsert, modify, delete, (=:), select,
                     findOne, count, lookup, at
                  )
@@ -65,6 +67,11 @@ withDB f = do
     mongoURI <- getEnvDefault "MONGO_URL" "mongodb://127.0.0.1:27017/eventsourcehq"
 
     bracket (openConn mongoURI) closeConn f	
+
+
+returnModel :: (Document -> a) -> Either Failure (Maybe Document) -> Either Failure (Maybe a)
+returnModel constructor (Right result) = return (fmap constructor result)
+returnModel _           (Left failure) = Left failure
 
 
 openConn :: String -> IO DB
