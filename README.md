@@ -18,6 +18,8 @@ specifying a channel to listen to in the query string. The server
 connects to a fanout AMQP exchange and routes AMQP messages as events to
 the javascript clients.
 
+MongoDB is used to store user and connection information.
+
 The server expects the AMQP messages to be JSON following the format:
 
     {
@@ -26,6 +28,13 @@ The server expects the AMQP messages to be JSON following the format:
         "id": "event-id", // optional
         "name": "event-name" // optional
     }
+
+To open connections to a channel a user with an key and a secret is
+expected to exist in the database. Before opening a connection a socket
+id must be aquired from by calling POST /socket
+
+A simple example of how to interact with this API can be found in the
+[https://github.com/eshq/eshq-gem](eshq ruby gem).
 
 Installation
 ============
@@ -39,11 +48,9 @@ Run as:
     eventsource-broker -p <port>
 
 The broker will look for an AMQP_URL environment variable for a broker
-to connect to.
-
-The repository includes a small ruby script to send data to channels and
-the server will by default serve up a simple index page subscribing to
-the channel "test".
+to connect to. It also takes a MONGO_URL for configuring the database
+connection and an ORIGIN variable that should be a url the server runs
+on for cross domain requests.
 
 License
 =======
